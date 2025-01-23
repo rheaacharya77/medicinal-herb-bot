@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title> 🌿 HerbBot</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css" integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+
+<body>
+  <div class="container-fluid h-99">
+    <div class="row justify-content-center h-100">
+      <div class="col-md-8 col-xl-6 chat">
+        <div class="card">
+          <!-- Chat Header -->
+          <div class="card-header msg_head">
+            <div class="d-flex bd-highlight">
+              <div class="img_cont">
+                <img src="static/image/herbbot-2.jpg" class="rounded-circle user_img">
+                <span class="online_icon"></span>
+              </div>
+              <div class="user_info">
+                <span>HerbBot</span>
+              </div>
+            </div>
+          </div>
+
+
+            <!-- Chat Body -->
+         <div id="messageFormeight" class="card-body msg_card_body">
+           <!-- Messages will appear here -->
+         </div>
+           <!-- Chat Footer -->
+          <div class="card-footer d-flex align-items-center">
+              <!-- Camera Icon and File Input-->
+              <form id="uploadForm" enctype="multipart/form-data" class="mr-2">
+              <input type="file"
+                     id="imageUpload"
+                     accept="image/*"
+                     style="display: none;"
+                     name="image" />
+              <button id="camera"
+                      class="camera_btn"
+                      type="button"
+                      onclick="document.getElementById('imageUpload').click()">
+                <i class="fas fa-camera"></i>
+              </button>
+              </form>
+          
+              <!-- Chat Input -->
+              <form id="messageArea" class="input-group ml-3">
+                <input type="text"
+                       id="text"
+                       name="msg"
+                       placeholder="Ask about the herb..."
+                       autocomplete="off"
+                       class="form-control type_msg"
+                       required />
+                <div class="input-group-append">
+                  <button type="submit" id="send" class="input-group-text send_btn">
+                    <i class="fas fa-location-arrow"></i>
+                  </button>
+                </div>
+              </form>
+            </div>            
+        </div>
+      </div>
+    </div>
+  </div>
+
+ <script>
+      $(document).ready(function () {
+        let plantClass = ""; // Store the classified plant class
+  
+        // Trigger on file selection for image upload
+        document.getElementById("imageUpload").addEventListener("change", function () {
+          if (this.files && this.files.length > 0) {
+            const file = this.files[0];
+  
+            // Validate the uploaded file
+            if (!file.type.startsWith("image/")) {
+              alert("Please upload a valid image file.");
+              return;
+            }
+           
+           // Display the uploaded image
+           const reader = new FileReader();
+           reader.onload = function (e) {
+               console.log(e)
+           $("#imagePreview").attr("src", e.target.result);
+           
+           $("#imagePreviewContainer").show(); // Show the image preview container
+             // Send the image to the appendMessage function
+           appendMessage(e.target.result, "user",true); // Send image to the function as a user message
+             
+       };
+          
+           reader.readAsDataURL(file);   
+            // Automatically submit the form
+            $("#uploadForm").submit();
+          }
+        });
+  
+        // Handle the form submission event
+        $("#uploadForm").on("submit", function (event) {
+          event.preventDefault(); // Prevent default form submission
+          console.log("Image uploaded and form submitted");
+          const file = $("#imageUpload")[0].files[0];
+          if (!file) {
+            alert("No file selected. Please upload an image.");
+            return;
+          }
+          toggleLoading(true); // Show loading spinner
+  
+          // Prepare the form data
+          const formData = new FormData();
+          formData.append("herbImage", file);
+         
+          // Create a temporary preview of the uploaded image
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+
+
+          // AJAX request to classify the plant
+          $.ajax({
+            url: "/classify_plant",
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (data) {
+              plantClass = data.plant_class;
+              // Display predicted herb name below the image
+              appendMessage(`Predicted Herb: <strong>${plantClass}</strong>`, "bot",false);
+              $("#messageArea").show(); // Display the chat area
+            },
+            error: function () {
+              alert("Error in classification. Please try again.");
+            },
+            complete: function () {
+              toggleLoading(false); // Hide loading spinner
+            },
+          });
+        });
+  
+        // Chatbot interaction
+        $("#messageArea").on("submit", function (event) {
+          event.preventDefault(); // Prevent default form submission
+  
+          const rawText = $("#text").val();
+          if (!rawText.trim()) return; // Ignore empty inputs
+  
+          appendMessage(rawText, "user",false);
+          $("#text").val(""); // Clear input field
+        
+           // Show loader animation
+          const loaderId = appendLoader();
+        
+          // AJAX request to get chatbot response
+          $.ajax({
+            url: "/get",
+            type: "POST",
+            contentType: "application/json",
+            dataType: "json",
+            data: JSON.stringify({ msg: rawText, plant_class: plantClass || ""}),
+            success: function (data) {
+              const formattedMessage = formatApiResponse(data.response);
+              removeLoader(loaderId);
+              appendMessage(formattedMessage, "bot",false);
+            },
+            error: function () {
+              removeLoader(loaderId); // Remove "typing..." animation
+              appendMessage("Sorry, there was an error. Please try again later.", "bot",false);
+            },
+          });
+        });
+
+        // Add "loader..." animation
+        function appendLoader() {
+         const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+         const loaderId = `loader-${Date.now()}`; // Unique ID for loader indicator
+
+        const loaderHtml = `
+          <div id="${loaderId}" class="d-flex justify-content-start mb-4">
+          <div class="img_cont_msg">
+          <img src="static/image/herbbot-2.jpg" class="rounded-circle user_img_msg">
+          </div>
+          <div class="msg_cotainer">
+          <span class="typing-indicator">
+        <span>•</span><span>•</span><span>•</span><span>•</span><span>•</span>
+      </span>
+          <span class="msg_time">${time}</span>
+          </div>
+          </div>
+              `;
+
+      $("#messageFormeight").append(loaderHtml);
+      $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight); // Auto-scroll
+      return loaderId; // Return the ID for later removal
+      }
+
+        function appendImage(imageUrl, sender) {
+         console.log("Appending image with URL:", imageUrl); // Debug log
+         console.log(sender,"sender")
+         const messageContainer = $("#chatbox");
+
+
+         // Create a div for the message
+         const messageDiv = $("<div>").addClass(sender === "user" ? "user-message" : "bot-message");
+
+
+        // Create an image element and add the uploaded image
+         const imageElement = $("<img>")
+         .attr("src", imageUrl)
+         .attr("alt", "Uploaded Image")
+         .addClass("chat-image"); // Add a CSS class for styling
+
+
+        // Append the image to the message div
+         messageDiv.append(imageElement);
+
+
+        // Append the message div to the chatbox
+         messageContainer.append(messageDiv);
+
+
+        // Scroll to the bottom of the chatbox
+         messageContainer.scrollTop(messageContainer.prop("scrollHeight"));
+         console.log("Image appended to chat.");
+}
+
+
+       // Remove "loader..." animation
+        function removeLoader(loaderId) {
+         $(`#${loaderId}`).remove(); // Remove the typing indicator
+         }
+  
+       // Format API response (convert text to HTML)
+        function formatApiResponse(rawResponse) {
+        // Split the response into lines
+         let responseParts = rawResponse.trim().split("\n");
+        // Initialize the formatted text
+         let formattedText = "";
+
+
+        // Iterate through each line
+         responseParts.forEach((line) => {
+         line = line.trim(); // Remove leading and trailing whitespace
+
+         if (line.match(/^\d+\.\s/)) {
+         // Matches numbered list items (e.g., "1. Item")
+         formattedText += `<li>${line.substring(3)}</li>`;
+          } else if (line.startsWith("* ")) {
+         // Matches bullet points (e.g., "* Item")
+         formattedText += `<li>${line.substring(2)}</li>`;
+          } else {
+         // Default case for plain text (paragraphs or headings)
+          formattedText += `<p>${line}</p>`;
+  }
+});
+
+         // Wrap lists in a <ul> or <ol> if necessary
+          if (formattedText.includes("<li>")) {
+           formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, "$1"); // Remove unnecessary <p> around lists
+           formattedText = `<ul>${formattedText}</ul>`;
+}
+           return formattedText;
+}
+        // Append message to the chat interface
+       function appendMessage(message, sender,isImage) {
+         console.log(message,'MESSAGE')
+         console.log(sender,'SENDER')
+
+
+          const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const isUser = sender === "user";
+          const messageHtml = `
+            <div class="d-flex justify-content-${isUser ? "end" : "start"} mb-4">
+             ${!isUser ? `<div class="img_cont_msg">
+                <img src="static/image/herbbot-2.jpg" class="rounded-circle user_img_msg">
+              </div>` : ""}
+              <div class="msg_cotainer${isUser ? "_send" : ""}">
+              ${isImage ? `<img src= "${message}" class = "image" alt="Image"/>` : message}
+                <span class="msg_time${isUser ? "_send" : ""}">${time}</span>
+              </div>
+              ${isUser ? `<div class="img_cont_msg">
+                <img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg">
+              </div>` : ""}
+            </div>
+          `;
+  
+          $("#messageFormeight").append(messageHtml);
+          $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight); // Auto-scroll
+        }
+  
+        // Toggle loading spinner
+        function toggleLoading(show) {
+          if (show) {
+            if (!$("#loading").length) {
+              $("#uploadForm").append(
+                '<div id="loading" class="spinner-border" role="status"><span class="sr-only">Loading...</span></div>'
+              );
+            }
+          } else {
+            $("#loading").remove();
+          }
+        }
+      });
+ </script>
+  
+</body>
+</html>
